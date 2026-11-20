@@ -26,10 +26,12 @@ except ImportError:          # (not available on every platform)
 
 # ---------------------------------------------------------------- tables
 # opsh name -> real Linux program (these are NOT builtins: we fork+exec them)
-# [BOX B1 START] owner: Adam FTOUKI | the tables ALIASES and BUILTINS | replace this whole box (down to its END line) with the real code
-ALIASES = {}
-BUILTINS = []
-# [BOX B1 END]
+ALIASES = {
+    "list": "ls", "show": "cat", "copy": "cp", "move": "mv",
+    "del": "rm", "newdir": "mkdir", "newfile": "touch",
+}
+BUILTINS = ["go", "quit", "path", "say", "info", "past", "osinfo",
+            "export", "jobs", "fg"]
 HISTORY_FILE = os.path.expanduser("~/.opsh_history")
 RC_FILE = os.path.expanduser("~/.opshrc")
 
@@ -42,16 +44,30 @@ class Opsh:
         self.history = []
         self.jobs = {}            # job number -> (pid, command text)
         self.next_job = 1
+        self.bg_extra = []        # pids of the OTHER commands of a '&' pipeline
         # SIGCHLD: a child changed state -> reap finished BACKGROUND jobs
         signal.signal(signal.SIGCHLD, self.on_sigchld)
 
     # ================================================================
     # SIGNALS
     # ================================================================
-    # [BOX B6 START] owner: Adam FTOUKI | on_sigchld | replace this whole box (down to its END line) with the real code
     def on_sigchld(self, signum, frame):
-        pass
-    # [BOX B6 END]
+        """Called by the kernel when a child dies. We only collect
+        background jobs here, so they do not stay ZOMBIES."""
+        for num, (pid, cmd) in list(self.jobs.items()):
+            try:
+                done, status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                done = pid
+            if done == pid and self.jobs.pop(num, None):  # pop: the handler can
+                print(f"\n[{num}]+ Done    {cmd}")         # run twice at once
+        for pid in list(self.bg_extra):        # 'a -> b &': collect a too
+            try:
+                done, status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                done = pid
+            if done == pid and pid in self.bg_extra:      # (same reason)
+                self.bg_extra.remove(pid)
 
     # ================================================================
     # EXPANSION  ($VAR, ${VAR}, $?, $!, $$, $((...)), $(...), `...`)
@@ -92,20 +108,81 @@ class Opsh:
         return [line]
     # [BOX C1 END]
 
-    # [BOX B2 START] owner: Adam FTOUKI | parse_command | replace this whole box (down to its END line) with the real code
     @staticmethod
     def parse_command(text):
-        return shlex.split(text), None, None, False, False
-    # [BOX B2 END]
+        """'say hi > f.txt' -> (['say','hi'], stdin=None, stdout='f.txt', append=False)"""
+        lex = shlex.shlex(text, posix=True, punctuation_chars="<>&")
+        lex.whitespace_split = True
+        tokens = list(lex)
+        argv, infile, outfile, append, bg = [], None, None, False, False
+        i = 0
+        while i < len(tokens):
+            t = tokens[i]
+            if t in (">", ">>"):
+                outfile, append = tokens[i + 1], t == ">>"
+                i += 2
+            elif t == "<":
+                infile = tokens[i + 1]
+                i += 2
+            elif t == "&":
+                bg = True
+                i += 1
+            else:
+                argv.append(t)
+                i += 1
+        if argv and argv[0] in ALIASES:            # list -> ls, show -> cat ...
+            argv[0] = ALIASES[argv[0]]
+        return argv, infile, outfile, append, bg
 
     # ================================================================
     # BUILTINS (run INSIDE the shell process)
     # ================================================================
-    # [BOX B3 START] owner: Adam FTOUKI | builtin | replace this whole box (down to its END line) with the real code
     def builtin(self, argv):
-        print("opsh: box B3 (builtin) is not written yet")
+        """Run a builtin; return its exit status."""
+        cmd, args = argv[0], argv[1:]
+        if cmd == "go":                        # cd: MUST change the shell itself
+            target = args[0] if args else os.path.expanduser("~")
+            try:
+                os.chdir(os.path.expanduser(target))
+            except OSError as e:
+                print(f"go: {target}: {e.strerror}", file=sys.stderr)
+                return 1
+        elif cmd == "quit":
+            self.save_history()
+            sys.exit(int(args[0]) if args else 0)
+        elif cmd == "path":
+            print(os.getcwd())
+        elif cmd == "say":
+            print(" ".join(args))
+        elif cmd == "osinfo":
+            print("Systèmes d'Exploitation -- UIR/ESIN")
+        elif cmd == "info":
+            print("builtins : " + ", ".join(BUILTINS))
+            print("aliases  : " + ", ".join(f"{k}={v}" for k, v in ALIASES.items()))
+            print("pipe     : cmd1 -> cmd2   redirections: > >> <   background: &")
+        elif cmd == "past":
+            for n, h in enumerate(self.history, 1):
+                print(f"{n:>4}  {h}")
+        elif cmd == "export":                  # export NAME=value  or  export NAME
+            for a in args:
+                name, _, value = a.partition("=")
+                os.environ[name] = value if "=" in a else self.vars.get(name, "")
+        elif cmd == "jobs":
+            for num, (pid, c) in self.jobs.items():
+                print(f"[{num}]  {pid}  Running   {c}")
+        elif cmd == "fg":                      # simple fg: wait for the job
+            num = int(args[0].lstrip("%")) if args else max(self.jobs, default=None)
+            if num not in self.jobs:
+                print("fg: no such job", file=sys.stderr)
+                return 1
+            pid, c = self.jobs.pop(num)
+            print(c)
+            signal.signal(signal.SIGINT, lambda s, f: os.kill(pid, s))  # pass Ctrl-C on
+            try:
+                return self.wait_for([pid])
+            finally:
+                signal.signal(signal.SIGINT, signal.default_int_handler)
         return 0
-    # [BOX B3 END]
 
     # ================================================================
     # EXECUTION
@@ -212,16 +289,36 @@ class Opsh:
                 status = 128 - status
         return status
 
-    # [BOX B4 START] owner: Adam FTOUKI | apply_redirections | replace this whole box (down to its END line) with the real code
     @staticmethod
     def apply_redirections(infile, outfile, append):
-        pass
-    # [BOX B4 END]
+        if infile:
+            fd = os.open(infile, os.O_RDONLY)
+            os.dup2(fd, 0)                     # fd 0 = stdin
+            os.close(fd)
+        if outfile:
+            flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append else os.O_TRUNC)
+            fd = os.open(outfile, flags, 0o644)
+            os.dup2(fd, 1)                     # fd 1 = stdout
+            os.close(fd)
 
-    # [BOX B5 START] owner: Adam FTOUKI | run_builtin_redirected | replace this whole box (down to its END line) with the real code
     def run_builtin_redirected(self, cmd):
-        return self.builtin(cmd[0])
-    # [BOX B5 END]
+        """Builtin in the parent with > or <: save fds, redirect, restore."""
+        argv, infile, outfile, append, _ = cmd
+        saved = os.dup(0), os.dup(1)
+        try:
+            sys.stdout.flush()
+            self.apply_redirections(infile, outfile, append)
+            status = self.builtin(argv)
+            sys.stdout.flush()
+        except (OSError, ValueError) as e:
+            print(f"opsh: {e}", file=sys.stderr)
+            status = 1
+        finally:
+            os.dup2(saved[0], 0)
+            os.dup2(saved[1], 1)
+            os.close(saved[0])
+            os.close(saved[1])
+        return status
 
     # ================================================================
     # SCRIPT MODE: if / for / while
