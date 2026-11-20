@@ -94,19 +94,19 @@ et Ctrl-C arrête le script avec le statut 130.
     code/check.py             tests automatiques
     code/example.opsh         script de démonstration
     code/.opshrc.example      exemple de fichier de démarrage (à copier en ~/.opshrc)
-    report.pdf                rapport
-    demo.mp4                  vidéo de démonstration
+    report.pdf                rapport (à ajouter)
+    demo.mp4                  vidéo de démonstration (à ajouter)
 
 ## Jalons réalisés
 
 | Jalon | État | Fonctions principales |
 |---|---|---|
-| 1. REPL, fork/exec | fait | repl, run_line, fork_pipeline, wait_for |
-| 2. Builtins, alias, redirections | fait | builtin, parse_command, apply_redirections |
-| 3. Pipes, arrière-plan, signaux | fait | split_pipes, fork_pipeline, on_sigchld |
-| 4. Variables et expansion | fait | get_var, expand |
-| 5. Substitution, .opshrc, historique, complétion | fait | capture, load_rc, setup_readline |
-| 6. Mode script (+ jobs, fg) | fait | parse_block, run_nodes, run_script |
+| 1. REPL, fork/exec | en cours (reste C1) | repl, run_line, fork_pipeline, wait_for |
+| 2. Builtins, alias, redirections | à faire (B1–B5) | builtin, parse_command, apply_redirections |
+| 3. Pipes, arrière-plan, signaux | en cours (reste C1, B6) | split_pipes, fork_pipeline, on_sigchld |
+| 4. Variables et expansion | en cours (reste C2, C3) | get_var, expand |
+| 5. Substitution, .opshrc, historique, complétion | en cours (reste C4–C6) | capture, load_rc, setup_readline |
+| 6. Mode script (+ jobs, fg) | en cours (reste B3 pour jobs/fg) | parse_block, run_nodes, run_script |
 
 ## Qui a fait quoi
 
