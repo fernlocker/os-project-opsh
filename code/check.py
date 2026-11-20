@@ -5,7 +5,7 @@ check.py - automatic tests for opsh, box by box.
     python3 check.py            test every box that is already written
     python3 check.py A1         test only box A1
     python3 check.py A1 A2      test several boxes
-    python3 check.py C          test all the boxes of one person (A, B, C or D)
+    python3 check.py C          test all the boxes of one member (A = Mohammed BEN CHRIF, B = Adam FTOUKI, C = Cherine DAKLI, D = Mohamed EL BOUDAKHANI)
     python3 check.py all        the teacher's demo + the script mode (final test)
 
 PASS = the box behaves like the finished opsh.
@@ -23,7 +23,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OPSH = os.path.join(HERE, "opsh.py")
-OWNERS = {"A": "Person A", "B": "Person B", "C": "Person C", "D": "Person D"}
+OWNERS = {"A": "Mohammed BEN CHRIF", "B": "Adam FTOUKI", "C": "Cherine DAKLI", "D": "Mohamed EL BOUDAKHANI"}
 ALL_BOXES = ["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3", "B4", "B5", "B6",
              "C1", "C2", "C3", "C4", "C5", "C6", "D1", "D2", "D3", "D4", "D5", "D6"]
 ENGINE = ["A2", "A3", "A4", "A5"]          # the boxes needed to really run a command
@@ -81,7 +81,7 @@ def t(box, title, needs, kind, src, expected):
     T.append((box, title, [box] + needs, kind, src, expected))
 
 
-# ---- Person A -------------------------------------------------
+# ---- Mohammed BEN CHRIF (boxes A) -----------------------------------------
 t("A1", "the prompt opsh> appears and Ctrl-D leaves", [], "raw",
   [], "opsh> ")
 t("A2", "run_line cuts the line and calls run_pipeline", [], "unit",
@@ -123,7 +123,7 @@ t("A4", "a background command does not block the shell", ["A3", "A5"], "unit",
   "print(r, time.time() - t0 < 1, list(sh.jobs) == [1], sh.last_bg_pid == sh.jobs[1][0])",
   None)   # checked by a function below (the PID changes every time)
 
-# ---- Person B ---------------------------------------------------------------
+# ---- Adam FTOUKI (boxes B) ------------------------------------------------
 t("B1", "the 7 aliases and the 10 builtins are in the tables", [], "unit",
   "print(opsh.ALIASES['list'], opsh.ALIASES['show'], opsh.ALIASES['newfile'], len(opsh.ALIASES))\n"
   "print('osinfo' in opsh.BUILTINS, 'go' in opsh.BUILTINS, len(opsh.BUILTINS))",
@@ -193,7 +193,7 @@ t("B6", "a finished background job is collected (no zombie) and announced", [], 
   "print(sh.jobs)",
   "[1]+ Done    demo job\n{}")
 
-# ---- Person C ------------------------------------------------------------
+# ---- Cherine DAKLI (boxes C) ----------------------------------------------
 t("C1", "split_pipes cuts on -> and removes the spaces", [], "unit",
   "print(opsh.Opsh.split_pipes('show f.txt -> sort -> wc -l'))\nprint(opsh.Opsh.split_pipes('list'))",
   "['show f.txt', 'sort', 'wc -l']\n['list']")
@@ -229,7 +229,7 @@ t("C6", "expand pastes the output of $(...) and `...`", ENGINE + ["C2", "C3", "C
   "print(sh.expand('a $(echo b c) d `echo e` f'))\nprint(sh.expand('$(echo $(echo deep))'))",
   "a b c d e f\ndeep")
 
-# ---- Person D --------------------------------------------------------
+# ---- Mohamed EL BOUDAKHANI (boxes D) --------------------------------------
 t("D1", "load_rc runs every line of ~/.opshrc (and no file = no error)", ["A2"], "unit",
   "sh.load_rc()\nprint(sh.vars)\nopen(opsh.RC_FILE, 'w').write('ZED=42\\n# comment\\nTWO=2\\n')\n"
   "sh.load_rc()\nprint(sh.vars)",
@@ -365,7 +365,7 @@ def final_test():
     ex = os.path.join(HERE, "example.opsh")
     print("---- script mode ----")
     if not os.path.exists(ex):
-        print("WAIT  code/example.opsh does not exist yet (Person D)")
+        print("WAIT  code/example.opsh does not exist yet (Mohamed EL BOUDAKHANI)")
         fails += 1
     else:
         out, err = run([sys.executable, OPSH, ex])

@@ -3,7 +3,7 @@
 Projet semestriel · Systèmes d'Exploitation · UIR / ESIN · Automne 2026
 Projet 2 (opsh) · Groupe TPD
 
-**Membres :** Mohammed Benchrif · Adam · Sherine · Mohammed Rifi
+**Membres :** Mohammed BEN CHRIF · Adam FTOUKI · Cherine DAKLI · Mohamed EL BOUDAKHANI
 
 ## Description
 
@@ -112,10 +112,10 @@ et Ctrl-C arrête le script avec le statut 130.
 
 | Membre | Boîtes | Partie |
 |---|---|---|
-| Mohammed Benchrif | A1–A5 | boucle REPL, exécution (fork/exec/wait), pipes ; dépôt Git |
-| Adam | B1–B6 | alias, builtins, redirections, SIGCHLD ; vidéo |
-| Sherine | C1–C6 | découpage `->`, variables, arithmétique, substitution ; rapport |
-| Mohammed Rifi | D1–D6 | .opshrc, historique, complétion, mode script ; README et tests |
+| Mohammed BEN CHRIF | A1–A5 | boucle REPL, exécution (fork/exec/wait), pipes ; dépôt Git |
+| Adam FTOUKI | B1–B6 | alias, builtins, redirections, SIGCHLD ; vidéo |
+| Cherine DAKLI | C1–C6 | découpage `->`, variables, arithmétique, substitution ; rapport |
+| Mohamed EL BOUDAKHANI | D1–D6 | .opshrc, historique, complétion, mode script ; README et tests |
 
 ## Limites connues
 

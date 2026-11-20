@@ -26,7 +26,7 @@ except ImportError:          # (not available on every platform)
 
 # ---------------------------------------------------------------- tables
 # opsh name -> real Linux program (these are NOT builtins: we fork+exec them)
-# [BOX B1 START] owner: Person B | the tables ALIASES and BUILTINS | replace this whole box (down to its END line) with the real code
+# [BOX B1 START] owner: Adam FTOUKI | the tables ALIASES and BUILTINS | replace this whole box (down to its END line) with the real code
 ALIASES = {}
 BUILTINS = []
 # [BOX B1 END]
@@ -48,7 +48,7 @@ class Opsh:
     # ================================================================
     # SIGNALS
     # ================================================================
-    # [BOX B6 START] owner: Person B | on_sigchld | replace this whole box (down to its END line) with the real code
+    # [BOX B6 START] owner: Adam FTOUKI | on_sigchld | replace this whole box (down to its END line) with the real code
     def on_sigchld(self, signum, frame):
         pass
     # [BOX B6 END]
@@ -56,29 +56,29 @@ class Opsh:
     # ================================================================
     # EXPANSION  ($VAR, ${VAR}, $?, $!, $$, $((...)), $(...), `...`)
     # ================================================================
-    # [BOX C2 START] owner: Person C | get_var | replace this whole box (down to its END line) with the real code
+    # [BOX C2 START] owner: Cherine DAKLI | get_var | replace this whole box (down to its END line) with the real code
     def get_var(self, name):
         return ""
     # [BOX C2 END]
 
-    # [BOX C3 START] owner: Person C | expand | replace this whole box (down to its END line) with the real code
+    # [BOX C3 START] owner: Cherine DAKLI | expand | replace this whole box (down to its END line) with the real code
     def expand(self, line):
         return line
     # [BOX C3 END]
 
-    # [BOX C4 START] owner: Person C | matching_paren | replace this whole box (down to its END line) with the real code
+    # [BOX C4 START] owner: Cherine DAKLI | matching_paren | replace this whole box (down to its END line) with the real code
     @staticmethod
     def matching_paren(s, start):
         return s.index(")", start)
     # [BOX C4 END]
 
-    # [BOX C5 START] owner: Person C | arith | replace this whole box (down to its END line) with the real code
+    # [BOX C5 START] owner: Cherine DAKLI | arith | replace this whole box (down to its END line) with the real code
     @staticmethod
     def arith(expr):
         return expr
     # [BOX C5 END]
 
-    # [BOX C6 START] owner: Person C | capture | replace this whole box (down to its END line) with the real code
+    # [BOX C6 START] owner: Cherine DAKLI | capture | replace this whole box (down to its END line) with the real code
     def capture(self, cmdline):
         return ""
     # [BOX C6 END]
@@ -86,13 +86,13 @@ class Opsh:
     # ================================================================
     # PARSING
     # ================================================================
-    # [BOX C1 START] owner: Person C | split_pipes | replace this whole box (down to its END line) with the real code
+    # [BOX C1 START] owner: Cherine DAKLI | split_pipes | replace this whole box (down to its END line) with the real code
     @staticmethod
     def split_pipes(line):
         return [line]
     # [BOX C1 END]
 
-    # [BOX B2 START] owner: Person B | parse_command | replace this whole box (down to its END line) with the real code
+    # [BOX B2 START] owner: Adam FTOUKI | parse_command | replace this whole box (down to its END line) with the real code
     @staticmethod
     def parse_command(text):
         return shlex.split(text), None, None, False, False
@@ -101,7 +101,7 @@ class Opsh:
     # ================================================================
     # BUILTINS (run INSIDE the shell process)
     # ================================================================
-    # [BOX B3 START] owner: Person B | builtin | replace this whole box (down to its END line) with the real code
+    # [BOX B3 START] owner: Adam FTOUKI | builtin | replace this whole box (down to its END line) with the real code
     def builtin(self, argv):
         print("opsh: box B3 (builtin) is not written yet")
         return 0
@@ -212,13 +212,13 @@ class Opsh:
                 status = 128 - status
         return status
 
-    # [BOX B4 START] owner: Person B | apply_redirections | replace this whole box (down to its END line) with the real code
+    # [BOX B4 START] owner: Adam FTOUKI | apply_redirections | replace this whole box (down to its END line) with the real code
     @staticmethod
     def apply_redirections(infile, outfile, append):
         pass
     # [BOX B4 END]
 
-    # [BOX B5 START] owner: Person B | run_builtin_redirected | replace this whole box (down to its END line) with the real code
+    # [BOX B5 START] owner: Adam FTOUKI | run_builtin_redirected | replace this whole box (down to its END line) with the real code
     def run_builtin_redirected(self, cmd):
         return self.builtin(cmd[0])
     # [BOX B5 END]
