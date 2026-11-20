@@ -110,10 +110,30 @@ class Opsh:
     # ================================================================
     # EXECUTION
     # ================================================================
-    # [BOX A2 START] owner: Person A | run_line | replace this whole box (down to its END line) with the real code
     def run_line(self, line):
-        pass
-    # [BOX A2 END]
+        line = line.strip()
+        if not line or line.startswith("#"):
+            return
+        try:
+            line = self.expand(line)
+            # VAR=value  (assignment, no spaces around '=')
+            m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", line)
+            if m:
+                self.vars[m.group(1)] = shlex.split(m.group(2))[0] if m.group(2) else ""
+                if m.group(1) in os.environ:
+                    os.environ[m.group(1)] = self.vars[m.group(1)]
+                self.last_status = 0
+                return
+            commands = [self.parse_command(p) for p in self.split_pipes(line)]
+        except (SyntaxError, ValueError, IndexError, ZeroDivisionError) as e:
+            print(f"opsh: syntax error: {e}", file=sys.stderr)
+            self.last_status = 2
+            return
+        if any(not c[0] for c in commands):
+            print("opsh: syntax error near '->'", file=sys.stderr)
+            self.last_status = 2
+            return
+        self.last_status = self.run_pipeline(commands, line)
 
     # [BOX A3 START] owner: Person A | run_pipeline | replace this whole box (down to its END line) with the real code
     def run_pipeline(self, commands, text):
@@ -182,10 +202,22 @@ class Opsh:
         pass
     # [BOX D1 END]
 
-    # [BOX A1 START] owner: Person A | repl | replace this whole box (down to its END line) with the real code
     def repl(self):
-        print("opsh: box A1 (repl) is not written yet")
-    # [BOX A1 END]
+        self.setup_readline()
+        self.load_rc()
+        while True:
+            try:
+                line = input("opsh> ")
+            except KeyboardInterrupt:          # Ctrl-C at the prompt: new line
+                print()
+                continue
+            except EOFError:                   # Ctrl-D: leave like 'quit'
+                print()
+                break
+            if line.strip():
+                self.history.append(line)
+            self.run_line(line)
+        self.save_history()
 
 
 def main():
