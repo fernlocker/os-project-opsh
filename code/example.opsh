@@ -1,0 +1,18 @@
+# example.opsh - run with: python3 opsh.py example.opsh
+osinfo
+i=1
+while [ $i -le 3 ]
+do
+  say "loop number $i"
+  i=$((i+1))
+done
+for f in alpha beta gamma
+do
+  say item: $f
+done
+if [ -d /tmp ]; then
+  say "/tmp exists"
+else
+  say "no /tmp"
+fi
+say "files here: $(list -> wc -l)"

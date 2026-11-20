@@ -226,39 +226,134 @@ class Opsh:
     # ================================================================
     # SCRIPT MODE: if / for / while
     # ================================================================
-    # [BOX D4 START] owner: Person D | parse_block | replace this whole box (down to its END line) with the real code
     def parse_block(self, lines, i, ends):
-        return [], len(lines)
-    # [BOX D4 END]
+        """Turn lines into a tree of nodes until one of `ends` is found.
 
-    # [BOX D5 START] owner: Person D | run_nodes | replace this whole box (down to its END line) with the real code
+        Returns (nodes, i): the list of nodes and the index of the line that ended
+        the block. The nodes are tuples:
+            ("cmd", line)
+            ("if", condition, then_nodes, else_nodes)
+            ("for", var, "word list", body_nodes)
+            ("while", condition, body_nodes)
+        It calls itself for the inside of a block (recursion), so loops can be nested.
+        """
+        nodes = []
+        while i < len(lines):
+            line = lines[i].strip()
+            word = line.split()[0] if line else ""
+            if word in ends:                       # end of the block we are reading
+                return nodes, i
+            if word == "if":                       # if CMD / then / else / fi
+                cond = line[2:].strip()
+                then_part, i = self.parse_block(lines, i + 2, ("else", "fi"))   # i+2: skip "then"
+                else_part = []
+                if lines[i].strip() == "else":
+                    else_part, i = self.parse_block(lines, i + 1, ("fi",))
+                nodes.append(("if", cond, then_part, else_part))
+            elif word == "for":                    # for x in a b c / do / done
+                parts = line.split()
+                body, i = self.parse_block(lines, i + 2, ("done",))            # i+2: skip "do"
+                nodes.append(("for", parts[1], " ".join(parts[3:]), body))
+            elif word == "while":                  # while CMD / do / done
+                body, i = self.parse_block(lines, i + 2, ("done",))
+                nodes.append(("while", line[5:].strip(), body))
+            elif line and not line.startswith("#"):  # an ordinary command
+                nodes.append(("cmd", line))
+            i += 1                                 # skip fi / done (or go to the next line)
+        return nodes, i
+
     def run_nodes(self, nodes):
-        pass
-    # [BOX D5 END]
+        # walk the tree made by parse_block and run it
+        for node in nodes:
+            kind = node[0]
+            if kind == "cmd":
+                self.run_line(node[1])
+            elif kind == "if":                     # run the condition, look at $?
+                self.run_line(node[1])
+                self.run_nodes(node[2] if self.last_status == 0 else node[3])
+            elif kind == "for":                    # one turn per word of the list
+                for value in shlex.split(self.expand(node[2])):
+                    self.vars[node[1]] = value
+                    self.run_nodes(node[3])
+            elif kind == "while":                  # repeat while the condition gives 0
+                while True:
+                    self.run_line(node[1])
+                    if self.last_status != 0:
+                        break
+                    self.run_nodes(node[2])
+            if self.last_status == 130:            # Ctrl-C killed a command (128 + SIGINT 2):
+                raise KeyboardInterrupt            # stop the whole script, like bash
 
-    # [BOX D6 START] owner: Person D | run_script | replace this whole box (down to its END line) with the real code
     def run_script(self, path):
-        print("opsh: box D6 (run_script) is not written yet")
-        return 0
-    # [BOX D6 END]
+        # script mode: python3 opsh.py file.opsh
+        try:
+            with open(path) as f:
+                text = f.read()
+        except OSError as e:                       # no such file, permission denied, directory...
+            print(f"opsh: {path}: {e.strerror}", file=sys.stderr)
+            return 127
+        # allow "if cmd; then ...; fi" and "for x in a b; do ...; done" on one line
+        text = re.sub(r";\s*(then|do|else|fi|done)\b", r"\n\1\n", text)
+        lines = [l for l in text.splitlines()         # drop empty and comment lines
+                 if l.strip() and not l.strip().startswith("#")]
+        try:
+            nodes, _ = self.parse_block(lines, 0, ())
+        except IndexError:                         # parse_block ran past the end: no fi / done
+            print(f"opsh: {path}: 'fi' or 'done' is missing", file=sys.stderr)
+            return 2
+        try:
+            self.run_nodes(nodes)
+        except KeyboardInterrupt:                  # Ctrl-C stops the script
+            return 130
+        return self.last_status
 
     # ================================================================
     # HISTORY, COMPLETION, .opshrc, REPL
     # ================================================================
-    # [BOX D2 START] owner: Person D | setup_readline | replace this whole box (down to its END line) with the real code
     def setup_readline(self):
-        pass
-    # [BOX D2 END]
+        # readline gives the arrow keys, the history (up/down) and the TAB key
+        if not readline:                       # module missing on this system: skip
+            return
+        try:                                   # load the history of the previous sessions
+            readline.read_history_file(HISTORY_FILE)
+            self.history = [readline.get_history_item(i)
+                            for i in range(1, readline.get_current_history_length() + 1)]
+        except OSError:                        # first run: no ~/.opsh_history yet
+            pass
+        words = BUILTINS + list(ALIASES)       # the opsh words TAB can propose
 
-    # [BOX D3 START] owner: Person D | save_history | replace this whole box (down to its END line) with the real code
+        def complete(text, state):
+            # readline calls this with state = 0, 1, 2 ... until we return None
+            # first word -> commands, otherwise -> file names
+            if readline.get_line_buffer().split()[:1] in ([], [text]):
+                options = [w for w in words if w.startswith(text)]
+            else:
+                d, base = os.path.split(text)  # "code/op" -> ("code", "op")
+                try:
+                    options = [os.path.join(d, f) + ("/" if os.path.isdir(os.path.join(d or ".", f)) else "")
+                               for f in os.listdir(d or ".") if f.startswith(base)]
+                except OSError:                # folder does not exist / not readable
+                    options = []
+            return options[state] if state < len(options) else None
+        readline.set_completer(complete)
+        readline.set_completer_delims(" \t")   # a word ends at a space or a tab only
+        # macOS uses libedit, Linux uses GNU readline: the TAB binding is written differently
+        readline.parse_and_bind("bind ^I rl_complete" if "libedit" in (readline.__doc__ or "") else "tab: complete")
+
     def save_history(self):
-        pass
-    # [BOX D3 END]
+        # write the history to ~/.opsh_history so the next opsh remembers it
+        if readline:
+            try:
+                readline.write_history_file(HISTORY_FILE)
+            except OSError:                    # read-only home, etc.: not worth a crash
+                pass
 
-    # [BOX D1 START] owner: Person D | load_rc | replace this whole box (down to its END line) with the real code
     def load_rc(self):
-        pass
-    # [BOX D1 END]
+        # ~/.opshrc = "run commands" file, executed once at start-up (like ~/.bashrc)
+        if os.path.exists(RC_FILE):            # no file -> nothing to do, no error
+            with open(RC_FILE) as f:
+                for line in f:                 # every line goes through the normal path
+                    self.run_line(line)        # same function as a line typed at the prompt
 
     def repl(self):
         self.setup_readline()
