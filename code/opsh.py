@@ -135,24 +135,82 @@ class Opsh:
             return
         self.last_status = self.run_pipeline(commands, line)
 
-    # [BOX A3 START] owner: Person A | run_pipeline | replace this whole box (down to its END line) with the real code
     def run_pipeline(self, commands, text):
-        print("opsh: box A3 (run_pipeline) is not written yet. I would run:",
-              [c[0] for c in commands])
-        return 0
-    # [BOX A3 END]
+        background = commands[-1][4]
+        # A single builtin runs in the shell itself (needed for go / quit / export)
+        if len(commands) == 1 and commands[0][0][0] in BUILTINS and not background:
+            return self.run_builtin_redirected(commands[0])
 
-    # [BOX A4 START] owner: Person A | fork_pipeline | replace this whole box (down to its END line) with the real code
+        # The shell IGNORES Ctrl-C while children run (like bash).
+        # Children put SIGINT back to default, so Ctrl-C kills THEM only.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        try:
+            return self.fork_pipeline(commands, text, background)
+        finally:
+            signal.signal(signal.SIGINT, signal.default_int_handler)
+
     def fork_pipeline(self, commands, text, background):
-        print("opsh: box A4 (fork_pipeline) is not written yet. I would start:",
-              [c[0] for c in commands])
-        return 0
-    # [BOX A4 END]
+        pids, prev_read = [], None
+        for idx, (argv, infile, outfile, append, _) in enumerate(commands):
+            last = idx == len(commands) - 1
+            if not last:
+                r, w = os.pipe()               # pipe: w = write end, r = read end
+            pid = os.fork()
+            if pid == 0:                       # ---------------- CHILD
+                signal.signal(signal.SIGINT, signal.SIG_DFL)
+                signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+                if background:
+                    os.setpgid(0, 0)           # own group: Ctrl-C won't kill it
+                if prev_read is not None:      # read from previous command
+                    os.dup2(prev_read, 0)
+                    os.close(prev_read)
+                if not last:                   # write into the pipe
+                    os.close(r)
+                    os.dup2(w, 1)
+                    os.close(w)
+                try:
+                    self.apply_redirections(infile, outfile, append)
+                    if argv[0] in BUILTINS:    # builtin inside a pipeline
+                        status = self.builtin(argv)
+                        sys.stdout.flush()
+                        os._exit(status)
+                    os.execvp(argv[0], argv)   # replaces the child's program
+                except FileNotFoundError as e:     # the program, or a file after < >
+                    print(f"opsh: {e.filename + ': no such file' if e.filename else 'command not found: ' + argv[0]}", file=sys.stderr)
+                    os._exit(127)
+                except OSError as e:               # no permission, is a directory...
+                    print(f"opsh: {e.filename or argv[0]}: {e.strerror}", file=sys.stderr)
+                    os._exit(126)
+            # ------------------------------------------------- PARENT
+            pids.append(pid)
+            if prev_read is not None:
+                os.close(prev_read)            # parent must close pipe ends!
+            if not last:
+                os.close(w)
+                prev_read = r
 
-    # [BOX A5 START] owner: Person A | wait_for | replace this whole box (down to its END line) with the real code
+        if background:
+            num = self.next_job
+            self.next_job += 1
+            self.jobs[num] = (pids[-1], text.rstrip("& "))
+            self.last_bg_pid = pids[-1]
+            print(f"[{num}] {pids[-1]}")
+            return 0
+        return self.wait_for(pids)
+
     def wait_for(self, pids):
-        return 0
-    # [BOX A5 END]
+        """Wait for every foreground child; return the status of the LAST one."""
+        status = 0
+        for pid in pids:
+            try:
+                _, st = os.waitpid(pid, 0)     # sleeps until this child ends
+            except ChildProcessError:
+                continue
+            status = os.waitstatus_to_exitcode(st)
+            if status < 0:                     # killed by signal N -> 128+N like bash
+                print()
+                status = 128 - status
+        return status
 
     # [BOX B4 START] owner: Person B | apply_redirections | replace this whole box (down to its END line) with the real code
     @staticmethod
