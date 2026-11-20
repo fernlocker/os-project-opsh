@@ -2,7 +2,7 @@
 
 Systèmes d'Exploitation · UIR / ESIN · Projet semestriel (Projet 2)
 
-Work in progress. The full README is written by Person D before the code freeze.
+Work in progress. The full README is written by mohamed el boudakhani before the code freeze.
 
     cd code
     python3 opsh.py        # start the shell
