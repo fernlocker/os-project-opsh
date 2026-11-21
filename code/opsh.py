@@ -72,44 +72,119 @@ class Opsh:
     # ================================================================
     # EXPANSION  ($VAR, ${VAR}, $?, $!, $$, $((...)), $(...), `...`)
     # ================================================================
-    # [BOX C2 START] owner: Cherine DAKLI | get_var | replace this whole box (down to its END line) with the real code
-    def get_var(self, name):
-        return ""
-    # [BOX C2 END]
+    def  get_var(self, name):
+        if name == "?":
+            return str(self.last_status)
+        if name == "!":
+            return str(self.last_bg_pid)
+        if name == "$":
+            return str(os.getpid())
+        return self.vars.get(name, os.environ.get(name, "")) 
 
-    # [BOX C3 START] owner: Cherine DAKLI | expand | replace this whole box (down to its END line) with the real code
     def expand(self, line):
-        return line
-    # [BOX C3 END]
+        out, i, quote = "", 0, None
+        while i < len(line):
+            c = line[i]
+            if c == "'" and quote != '"':
+                quote = None if quote == "'" else "'"
+                out += c
+                i += 1
+            elif c == '"' and quote != "'":
+                quote = None if quote == '"' else '"'
+                out += c
+                i += 1
+            elif quote == "'":
+                out += c
+                i += 1
+            elif line.startswith("$((", i):
+                end = line.index("))", i)
+                expr = self.expand(line[i + 3:end])
+                expr = re.sub(
+                    r"[A-Za-z_][A-Za-z0-9_]*",
+                    lambda v: self.get_var(v.group()) or "0",
+                    expr,
+                )
+                out += self.arith(expr)
+                i = end + 2
+            elif line.startswith("$(", i):
+                end = self.matching_paren(line, i + 1)
+                out += self.capture(line[i + 2:end])
+                i = end + 1
+            elif c == "`":
+                end = line.index("`", i + 1)
+                out += self.capture(line[i + 1:end])
+                i = end + 1
+            elif line.startswith("${", i):
+                end = line.index("}", i)
+                out += self.get_var(line[i + 2:end])
+                i = end + 1
+            elif c == "$" and i + 1 < len(line):
+                m = re.match(r"[A-Za-z_][A-Za-z0-9_]*|[?!$]", line[i + 1:])
+                if m:
+                    out += self.get_var(m.group())
+                    i += 1 + len(m.group())
+                else:
+                    out += c
+                    i += 1
+            else:
+                out += c
+                i += 1
+        return out 
 
-    # [BOX C4 START] owner: Cherine DAKLI | matching_paren | replace this whole box (down to its END line) with the real code
-    @staticmethod
-    def matching_paren(s, start):
-        return s.index(")", start)
-    # [BOX C4 END]
+@staticmethod
+def matching_paren(s, start):
+        depth = 0
+        for j in range(start, len(s)):
+            depth += {"(": 1, ")": -1}.get(s[j], 0)
+            if depth == 0:
+                return j
+        raise SyntaxError("missing)") 
 
-    # [BOX C5 START] owner: Cherine DAKLI | arith | replace this whole box (down to its END line) with the real code
-    @staticmethod
-    def arith(expr):
-        return expr
-    # [BOX C5 END]
+  @staticmethod
+def arith(expr):
+        if not re.fullmatch(r"[\d\s+\-*/%()]*", expr):
+            raise SyntaxError(f"bad arithmetic: {expr}")
+        return str(int(eval(expr.replace("/", "//")))) 
 
-    # [BOX C6 START] owner: Cherine DAKLI | capture | replace this whole box (down to its END line) with the real code
-    def capture(self, cmdline):
-        return ""
-    # [BOX C6 END]
+def capture(self, cmdline):
+        """Run cmdline in a CHILD opsh and return what it printed."""
+        r, w = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(r)
+            os.dup2(w, 1)
+            os.close(w)
+            self.run_line(cmdline)
+            sys.stdout.flush()
+            os._exit(self.last_status)
+        os.close(w)
+        with os.fdopen(r) as f:
+            data = f.read()
+        os.waitpid(pid, 0)
+        return data.rstrip("\n") 
 
     # ================================================================
     # PARSING
     # ================================================================
-    # [BOX C1 START] owner: Cherine DAKLI | split_pipes | replace this whole box (down to its END line) with the real code
-    @staticmethod
-    def split_pipes(line):
-        return [line]
-    # [BOX C1 END]
+     @staticmethod
+def split_pipes(line):
+        """Split on '->' but not inside quotes."""
+        parts, cur, quote, i = [], "", None, 0
+        while i < len(line):
+            c = line[i]
+            if c in "'\"":
+                quote = None if quote == c else (c if quote is None else quote)
+            if quote is None and line.startswith("->", i):
+                parts.append(cur)
+                cur, i = "", i + 2
+                continue
+            cur += c
+            i += 1
+        parts.append(cur)
+        return [p.strip() for p in parts] 
 
     @staticmethod
-    def parse_command(text):
+def parse_command(text):
         """'say hi > f.txt' -> (['say','hi'], stdin=None, stdout='f.txt', append=False)"""
         lex = shlex.shlex(text, posix=True, punctuation_chars="<>&")
         lex.whitespace_split = True
@@ -137,7 +212,7 @@ class Opsh:
     # ================================================================
     # BUILTINS (run INSIDE the shell process)
     # ================================================================
-    def builtin(self, argv):
+     def builtin(self, argv):
         """Run a builtin; return its exit status."""
         cmd, args = argv[0], argv[1:]
         if cmd == "go":                        # cd: MUST change the shell itself
