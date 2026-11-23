@@ -140,13 +140,13 @@ def matching_paren(s, start):
                 return j
         raise SyntaxError("missing)") 
 
-  @staticmethod
-def arith(expr):
+    @staticmethod
+    def arith(expr):
         if not re.fullmatch(r"[\d\s+\-*/%()]*", expr):
             raise SyntaxError(f"bad arithmetic: {expr}")
         return str(int(eval(expr.replace("/", "//")))) 
 
-def capture(self, cmdline):
+    def capture(self, cmdline):
         """Run cmdline in a CHILD opsh and return what it printed."""
         r, w = os.pipe()
         pid = os.fork()
