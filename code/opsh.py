@@ -72,14 +72,14 @@ class Opsh:
     # ================================================================
     # EXPANSION  ($VAR, ${VAR}, $?, $!, $$, $((...)), $(...), `...`)
     # ================================================================
-    def  get_var(self, name):
+    def get_var(self, name):
         if name == "?":
             return str(self.last_status)
         if name == "!":
             return str(self.last_bg_pid)
         if name == "$":
             return str(os.getpid())
-        return self.vars.get(name, os.environ.get(name, "")) 
+        return self.vars.get(name, os.environ.get(name, ""))
 
     def expand(self, line):
         out, i, quote = "", 0, None
@@ -129,22 +129,22 @@ class Opsh:
             else:
                 out += c
                 i += 1
-        return out 
+        return out
 
-@staticmethod
-def matching_paren(s, start):
+    @staticmethod
+    def matching_paren(s, start):
         depth = 0
         for j in range(start, len(s)):
             depth += {"(": 1, ")": -1}.get(s[j], 0)
             if depth == 0:
                 return j
-        raise SyntaxError("missing)") 
+        raise SyntaxError("missing )")
 
     @staticmethod
     def arith(expr):
         if not re.fullmatch(r"[\d\s+\-*/%()]*", expr):
             raise SyntaxError(f"bad arithmetic: {expr}")
-        return str(int(eval(expr.replace("/", "//")))) 
+        return str(int(eval(expr.replace("/", "//"))))
 
     def capture(self, cmdline):
         """Run cmdline in a CHILD opsh and return what it printed."""
@@ -161,13 +161,13 @@ def matching_paren(s, start):
         with os.fdopen(r) as f:
             data = f.read()
         os.waitpid(pid, 0)
-        return data.rstrip("\n") 
+        return data.rstrip("\n")
 
     # ================================================================
     # PARSING
     # ================================================================
-     @staticmethod
-def split_pipes(line):
+    @staticmethod
+    def split_pipes(line):
         """Split on '->' but not inside quotes."""
         parts, cur, quote, i = [], "", None, 0
         while i < len(line):
@@ -181,10 +181,10 @@ def split_pipes(line):
             cur += c
             i += 1
         parts.append(cur)
-        return [p.strip() for p in parts] 
+        return [p.strip() for p in parts]
 
     @staticmethod
-def parse_command(text):
+    def parse_command(text):
         """'say hi > f.txt' -> (['say','hi'], stdin=None, stdout='f.txt', append=False)"""
         lex = shlex.shlex(text, posix=True, punctuation_chars="<>&")
         lex.whitespace_split = True
@@ -212,7 +212,7 @@ def parse_command(text):
     # ================================================================
     # BUILTINS (run INSIDE the shell process)
     # ================================================================
-     def builtin(self, argv):
+    def builtin(self, argv):
         """Run a builtin; return its exit status."""
         cmd, args = argv[0], argv[1:]
         if cmd == "go":                        # cd: MUST change the shell itself
