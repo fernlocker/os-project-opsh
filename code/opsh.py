@@ -92,7 +92,9 @@ class Opsh:
                 out += c
                 i += 1
             elif line.startswith("$((", i):
-                end = line.index("))", i)
+                end = line.find("))", i)
+                if end < 0:
+                    raise SyntaxError("missing ))")
                 expr = self.expand(line[i + 3:end])
                 expr = re.sub(
                     r"[A-Za-z_][A-Za-z0-9_]*",
@@ -106,11 +108,15 @@ class Opsh:
                 out += self.capture(line[i + 2:end])
                 i = end + 1
             elif c == "`":
-                end = line.index("`", i + 1)
+                end = line.find("`", i + 1)
+                if end < 0:
+                    raise SyntaxError("missing `")
                 out += self.capture(line[i + 1:end])
                 i = end + 1
             elif line.startswith("${", i):
-                end = line.index("}", i)
+                end = line.find("}", i)
+                if end < 0:
+                    raise SyntaxError("missing }")
                 out += self.get_var(line[i + 2:end])
                 i = end + 1
             elif c == "$" and i + 1 < len(line):
@@ -139,7 +145,10 @@ class Opsh:
     def arith(expr):
         if not re.fullmatch(r"[\d\s+\-*/%()]*", expr):
             raise SyntaxError(f"bad arithmetic: {expr}")
-        return str(int(eval(expr.replace("/", "//"))))
+        try:
+            return str(int(eval(expr.replace("/", "//"))))
+        except SyntaxError:
+            raise SyntaxError(f"bad arithmetic: {expr}") from None
 
     def capture(self, cmdline):
         """Run cmdline in a child opsh and return what it printed (for $(...))."""
@@ -186,6 +195,8 @@ class Opsh:
         i = 0
         while i < len(tokens):
             t = tokens[i]
+            if t in (">", ">>", "<") and i + 1 >= len(tokens):
+                raise SyntaxError(f"missing file name after {t}")
             if t in (">", ">>"):
                 outfile, append = tokens[i + 1], t == ">>"
                 i += 2
@@ -215,6 +226,9 @@ class Opsh:
                 return 1
         elif cmd == "quit":
             self.save_history()
+            if args and not args[0].lstrip("-").isdigit():
+                print(f"quit: {args[0]}: not a number", file=sys.stderr)
+                return 1
             sys.exit(int(args[0]) if args else 0)
         elif cmd == "path":
             print(os.getcwd())
@@ -237,6 +251,9 @@ class Opsh:
             for num, (pid, c) in self.jobs.items():
                 print(f"[{num}]  {pid}  Running   {c}")
         elif cmd == "fg":                      # simple fg: wait for the job
+            if args and not args[0].lstrip("%").isdigit():
+                print(f"fg: {args[0]}: not a job number", file=sys.stderr)
+                return 1
             num = int(args[0].lstrip("%")) if args else max(self.jobs, default=None)
             if num not in self.jobs:
                 print("fg: no such job", file=sys.stderr)
@@ -375,7 +392,7 @@ class Opsh:
             status = self.builtin(argv)
             sys.stdout.flush()
         except (OSError, ValueError) as e:
-            print(f"opsh: {e}", file=sys.stderr)
+            print(f"opsh: {e.filename}: {e.strerror}" if getattr(e, "filename", None) else f"opsh: {e}", file=sys.stderr)
             status = 1
         finally:
             os.dup2(saved[0], 0)
