@@ -92,7 +92,7 @@ et Ctrl-C arrête le script avec le statut 130.
     code/opsh.py              le shell (une classe Opsh)
     code/example.opsh         script de démonstration
     code/.opshrc.example      exemple de fichier de démarrage (à copier en ~/.opshrc)
-    report.pdf                rapport (à ajouter)
+    report.pdf                rapport (3 pages)
     demo.mp4                  vidéo de démonstration (à ajouter)
 
 ## Jalons réalisés
