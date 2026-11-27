@@ -27,7 +27,6 @@ la complétion et un mode script (if / for / while).
     cd os-project-opsh/code
     python3 opsh.py                 # mode interactif (invite : opsh>)
     python3 opsh.py example.opsh    # mode script
-    python3 check.py all            # tests automatiques
 
 Quitter : `quit` ou Ctrl-D.
 
@@ -91,7 +90,6 @@ et Ctrl-C arrête le script avec le statut 130.
 ## Structure du dépôt
 
     code/opsh.py              le shell (une classe Opsh)
-    code/check.py             tests automatiques
     code/example.opsh         script de démonstration
     code/.opshrc.example      exemple de fichier de démarrage (à copier en ~/.opshrc)
     report.pdf                rapport (à ajouter)
@@ -99,23 +97,25 @@ et Ctrl-C arrête le script avec le statut 130.
 
 ## Jalons réalisés
 
-| Jalon | État | Fonctions principales |
-|---|---|---|
-| 1. REPL, fork/exec | en cours (reste C1) | repl, run_line, fork_pipeline, wait_for |
-| 2. Builtins, alias, redirections | fait | builtin, parse_command, apply_redirections |
-| 3. Pipes, arrière-plan, signaux | en cours (reste C1) | split_pipes, fork_pipeline, on_sigchld |
-| 4. Variables et expansion | en cours (reste C2, C3) | get_var, expand |
-| 5. Substitution, .opshrc, historique, complétion | en cours (reste C4–C6) | capture, load_rc, setup_readline |
-| 6. Mode script (+ jobs, fg) | fait | parse_block, run_nodes, run_script |
+Les six jalons sont faits.
+
+| Jalon | Fonctions principales |
+|---|---|
+| 1. REPL, fork/exec | repl, run_line, fork_pipeline, wait_for |
+| 2. Builtins, alias, redirections | builtin, parse_command, apply_redirections |
+| 3. Pipes, arrière-plan, signaux | split_pipes, fork_pipeline, on_sigchld |
+| 4. Variables et expansion | get_var, expand |
+| 5. Substitution, .opshrc, historique, complétion | capture, load_rc, setup_readline |
+| 6. Mode script (+ jobs, fg) | parse_block, run_nodes, run_script |
 
 ## Qui a fait quoi
 
-| Membre | Boîtes | Partie |
-|---|---|---|
-| Mohammed BEN CHRIF | A1–A5 | boucle REPL, exécution (fork/exec/wait), pipes ; dépôt Git |
-| Adam FTOUKI | B1–B6 | alias, builtins, redirections, SIGCHLD ; vidéo |
-| Cherine DAKLI | C1–C6 | découpage `->`, variables, arithmétique, substitution ; rapport |
-| Mohamed EL BOUDAKHANI | D1–D6 | .opshrc, historique, complétion, mode script ; README et tests |
+| Membre | Partie |
+|---|---|
+| Mohammed BEN CHRIF | boucle REPL, exécution (fork/exec/wait), pipes ; dépôt Git |
+| Adam FTOUKI | alias, builtins, redirections, SIGCHLD ; vidéo |
+| Cherine DAKLI | découpage `->`, variables, arithmétique, substitution ; rapport |
+| Mohamed EL BOUDAKHANI | .opshrc, historique, complétion, mode script ; README |
 
 ## Limites connues
 

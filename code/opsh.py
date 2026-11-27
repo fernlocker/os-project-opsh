@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-opsh - a mini-shell written in Python   (Systèmes d'Exploitation - UIR/ESIN)
-============================================================================
+opsh - a small shell written in Python (Systèmes d'Exploitation, UIR/ESIN)
+
     python3 opsh.py               interactive mode   (prompt: opsh>)
     python3 opsh.py script.opsh   script mode        (if / for / while)
 
-How one command line travels through opsh:
+What happens to a line you type:
 
   read line -> save in history -> expand $VAR ${VAR} $? $! $((..)) $(..) `..`
             -> split on '->' (our pipe) -> for each piece: split words,
@@ -24,8 +24,7 @@ try:
 except ImportError:          # (not available on every platform)
     readline = None
 
-# ---------------------------------------------------------------- tables
-# opsh name -> real Linux program (these are NOT builtins: we fork+exec them)
+# opsh names for real Linux programs (not builtins, they still go through fork+exec)
 ALIASES = {
     "list": "ls", "show": "cat", "copy": "cp", "move": "mv",
     "del": "rm", "newdir": "mkdir", "newfile": "touch",
@@ -44,16 +43,14 @@ class Opsh:
         self.history = []
         self.jobs = {}            # job number -> (pid, command text)
         self.next_job = 1
-        self.bg_extra = []        # pids of the OTHER commands of a '&' pipeline
-        # SIGCHLD: a child changed state -> reap finished BACKGROUND jobs
+        self.bg_extra = []        # pids of the other commands in an 'a -> b &' line
+        # when a child finishes, collect it if it was a background job
         signal.signal(signal.SIGCHLD, self.on_sigchld)
 
-    # ================================================================
-    # SIGNALS
-    # ================================================================
+    # --- signals ---
     def on_sigchld(self, signum, frame):
-        """Called by the kernel when a child dies. We only collect
-        background jobs here, so they do not stay ZOMBIES."""
+        """SIGCHLD handler. Only background jobs are collected here,
+        so they don't stay around as zombies."""
         for num, (pid, cmd) in list(self.jobs.items()):
             try:
                 done, status = os.waitpid(pid, os.WNOHANG)
@@ -69,9 +66,7 @@ class Opsh:
             if done == pid and pid in self.bg_extra:      # (same reason)
                 self.bg_extra.remove(pid)
 
-    # ================================================================
-    # EXPANSION  ($VAR, ${VAR}, $?, $!, $$, $((...)), $(...), `...`)
-    # ================================================================
+    # --- expansion ($var, ${var}, $?, $!, $$, $((...)), $(...), `...`) ---
     def get_var(self, name):
         if name == "?":
             return str(self.last_status)
@@ -147,7 +142,7 @@ class Opsh:
         return str(int(eval(expr.replace("/", "//"))))
 
     def capture(self, cmdline):
-        """Run cmdline in a CHILD opsh and return what it printed."""
+        """Run cmdline in a child opsh and return what it printed (for $(...))."""
         r, w = os.pipe()
         pid = os.fork()
         if pid == 0:
@@ -163,9 +158,7 @@ class Opsh:
         os.waitpid(pid, 0)
         return data.rstrip("\n")
 
-    # ================================================================
-    # PARSING
-    # ================================================================
+    # --- parsing ---
     @staticmethod
     def split_pipes(line):
         """Split on '->' but not inside quotes."""
@@ -209,13 +202,11 @@ class Opsh:
             argv[0] = ALIASES[argv[0]]
         return argv, infile, outfile, append, bg
 
-    # ================================================================
-    # BUILTINS (run INSIDE the shell process)
-    # ================================================================
+    # --- builtins (run inside the shell process) ---
     def builtin(self, argv):
         """Run a builtin; return its exit status."""
         cmd, args = argv[0], argv[1:]
-        if cmd == "go":                        # cd: MUST change the shell itself
+        if cmd == "go":                        # like cd, has to run in the shell itself
             target = args[0] if args else os.path.expanduser("~")
             try:
                 os.chdir(os.path.expanduser(target))
@@ -259,9 +250,7 @@ class Opsh:
                 signal.signal(signal.SIGINT, signal.default_int_handler)
         return 0
 
-    # ================================================================
-    # EXECUTION
-    # ================================================================
+    # --- execution ---
     def run_line(self, line):
         line = line.strip()
         if not line or line.startswith("#"):
@@ -289,12 +278,12 @@ class Opsh:
 
     def run_pipeline(self, commands, text):
         background = commands[-1][4]
-        # A single builtin runs in the shell itself (needed for go / quit / export)
+        # a lone builtin runs in the shell itself (go, quit and export need that)
         if len(commands) == 1 and commands[0][0][0] in BUILTINS and not background:
             return self.run_builtin_redirected(commands[0])
 
-        # The shell IGNORES Ctrl-C while children run (like bash).
-        # Children put SIGINT back to default, so Ctrl-C kills THEM only.
+        # While children run, the shell ignores Ctrl-C (bash does the same).
+        # The children reset SIGINT to default, so Ctrl-C only stops them.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
             return self.fork_pipeline(commands, text, background)
@@ -308,7 +297,7 @@ class Opsh:
             if not last:
                 r, w = os.pipe()               # pipe: w = write end, r = read end
             pid = os.fork()
-            if pid == 0:                       # ---------------- CHILD
+            if pid == 0:                       # child
                 signal.signal(signal.SIGINT, signal.SIG_DFL)
                 signal.signal(signal.SIGCHLD, signal.SIG_DFL)
                 if background:
@@ -333,10 +322,10 @@ class Opsh:
                 except OSError as e:               # no permission, is a directory...
                     print(f"opsh: {e.filename or argv[0]}: {e.strerror}", file=sys.stderr)
                     os._exit(126)
-            # ------------------------------------------------- PARENT
+            # parent
             pids.append(pid)
             if prev_read is not None:
-                os.close(prev_read)            # parent must close pipe ends!
+                os.close(prev_read)            # the parent has to close its copy too
             if not last:
                 os.close(w)
                 prev_read = r
@@ -351,7 +340,7 @@ class Opsh:
         return self.wait_for(pids)
 
     def wait_for(self, pids):
-        """Wait for every foreground child; return the status of the LAST one."""
+        """Wait for all foreground children and return the status of the last one."""
         status = 0
         for pid in pids:
             try:
@@ -395,9 +384,7 @@ class Opsh:
             os.close(saved[1])
         return status
 
-    # ================================================================
-    # SCRIPT MODE: if / for / while
-    # ================================================================
+    # --- script mode: if / for / while ---
     def parse_block(self, lines, i, ends):
         """Turn lines into a tree of nodes until one of `ends` is found.
 
@@ -479,9 +466,7 @@ class Opsh:
             return 130
         return self.last_status
 
-    # ================================================================
-    # HISTORY, COMPLETION, .opshrc, REPL
-    # ================================================================
+    # --- history, completion, .opshrc, repl ---
     def setup_readline(self):
         # readline gives the arrow keys, the history (up/down) and the TAB key
         if not readline:                       # module missing on this system: skip
