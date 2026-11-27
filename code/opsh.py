@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""
-opsh - a small shell written in Python (Systèmes d'Exploitation, UIR/ESIN)
-
-    python3 opsh.py               interactive mode   (prompt: opsh>)
-    python3 opsh.py script.opsh   script mode        (if / for / while)
-
-What happens to a line you type:
-
-  read line -> save in history -> expand $VAR ${VAR} $? $! $((..)) $(..) `..`
-            -> split on '->' (our pipe) -> for each piece: split words,
-               find > >> < and & -> builtin? run it : fork() + execvp()
-            -> wait for the children (or not, if '&') -> store $?
-"""
+# opsh - notre mini-shell en Python
+# Projet semestriel Systèmes d'Exploitation, UIR/ESIN
+#
+#   python3 opsh.py              -> mode interactif (invite "opsh>")
+#   python3 opsh.py script.opsh  -> exécute un fichier (if / for / while)
+#
+# Le chemin d'une ligne, en gros :
+#   lecture -> historique -> on remplace $X, $?, $((...)), $(...)
+#   -> on coupe sur "->" (c'est notre pipe) -> pour chaque morceau on trouve
+#   les mots, > >> < et & -> builtin ? on le lance ici : sinon fork + execvp
+#   -> on attend les fils (sauf avec &) et on garde le code de retour dans $?
 
 import os
 import re
@@ -20,11 +18,12 @@ import signal
 import sys
 
 try:
-    import readline          # arrow keys, history, TAB completion
-except ImportError:          # (not available on every platform)
-    readline = None
+    import readline  # flèches, historique et TAB
+except ImportError:
+    readline = None  # pas dispo partout, le shell marche quand même sans
 
-# opsh names for real Linux programs (not builtins, they still go through fork+exec)
+# nos noms à nous pour des vrais programmes Linux
+# (ce ne sont pas des builtins : ils passent par fork + exec comme les autres)
 ALIASES = {
     "list": "ls", "show": "cat", "copy": "cp", "move": "mv",
     "del": "rm", "newdir": "mkdir", "newfile": "touch",
@@ -37,36 +36,39 @@ RC_FILE = os.path.expanduser("~/.opshrc")
 
 class Opsh:
     def __init__(self):
-        self.vars = {}            # shell variables (not exported)
-        self.last_status = 0      # $?
-        self.last_bg_pid = ""     # $!
+        self.vars = {}          # variables du shell (pas exportées)
+        self.last_status = 0    # c'est $?
+        self.last_bg_pid = ""   # c'est $!
         self.history = []
-        self.jobs = {}            # job number -> (pid, command text)
+        self.jobs = {}          # numéro de job -> (pid, texte de la commande)
         self.next_job = 1
-        self.bg_extra = []        # pids of the other commands in an 'a -> b &' line
-        # when a child finishes, collect it if it was a background job
+        self.bg_extra = []      # avec "a -> b &", les pids de a (on garde b dans jobs)
+        # dès qu'un fils se termine, le noyau nous envoie SIGCHLD
         signal.signal(signal.SIGCHLD, self.on_sigchld)
 
-    # --- signals ---
+    # ---------- signaux ----------
+
     def on_sigchld(self, signum, frame):
-        """SIGCHLD handler. Only background jobs are collected here,
-        so they don't stay around as zombies."""
+        # On ne ramasse ici que les jobs en arrière-plan, sinon ils restent
+        # zombies. Les commandes normales sont attendues par wait_for.
         for num, (pid, cmd) in list(self.jobs.items()):
             try:
                 done, status = os.waitpid(pid, os.WNOHANG)
             except ChildProcessError:
                 done = pid
-            if done == pid and self.jobs.pop(num, None):  # pop: the handler can
-                print(f"\n[{num}]+ Done    {cmd}")         # run twice at once
-        for pid in list(self.bg_extra):        # 'a -> b &': collect a too
+            # pop et pas del : le handler peut être appelé deux fois d'affilée
+            if done == pid and self.jobs.pop(num, None):
+                print(f"\n[{num}]+ Done    {cmd}")
+        for pid in list(self.bg_extra):
             try:
                 done, status = os.waitpid(pid, os.WNOHANG)
             except ChildProcessError:
                 done = pid
-            if done == pid and pid in self.bg_extra:      # (same reason)
+            if done == pid and pid in self.bg_extra:
                 self.bg_extra.remove(pid)
 
-    # --- expansion ($var, ${var}, $?, $!, $$, $((...)), $(...), `...`) ---
+    # ---------- les variables et le reste des $ ----------
+
     def get_var(self, name):
         if name == "?":
             return str(self.last_status)
@@ -77,6 +79,8 @@ class Opsh:
         return self.vars.get(name, os.environ.get(name, ""))
 
     def expand(self, line):
+        # On lit la ligne caractère par caractère. Entre '...' on ne touche à
+        # rien, entre "..." on remplace quand même les variables (comme bash).
         out, i, quote = "", 0, None
         while i < len(line):
             c = line[i]
@@ -92,6 +96,7 @@ class Opsh:
                 out += c
                 i += 1
             elif line.startswith("$((", i):
+                # calcul : $((6*7)), et les noms de variables valent leur valeur
                 end = line.find("))", i)
                 if end < 0:
                     raise SyntaxError("missing ))")
@@ -104,6 +109,7 @@ class Opsh:
                 out += self.arith(expr)
                 i = end + 2
             elif line.startswith("$(", i):
+                # $(commande) : on la lance et on colle ce qu'elle affiche
                 end = self.matching_paren(line, i + 1)
                 out += self.capture(line[i + 2:end])
                 i = end + 1
@@ -125,7 +131,7 @@ class Opsh:
                     out += self.get_var(m.group())
                     i += 1 + len(m.group())
                 else:
-                    out += c
+                    out += c  # un $ tout seul reste un $
                     i += 1
             else:
                 out += c
@@ -134,6 +140,7 @@ class Opsh:
 
     @staticmethod
     def matching_paren(s, start):
+        # trouve la ) qui ferme la ( de départ, même avec $(say $(date)) dedans
         depth = 0
         for j in range(start, len(s)):
             depth += {"(": 1, ")": -1}.get(s[j], 0)
@@ -143,6 +150,8 @@ class Opsh:
 
     @staticmethod
     def arith(expr):
+        # on vérifie qu'il n'y a que des chiffres et des opérateurs avant le eval,
+        # et / devient // parce qu'on ne fait que des entiers
         if not re.fullmatch(r"[\d\s+\-*/%()]*", expr):
             raise SyntaxError(f"bad arithmetic: {expr}")
         try:
@@ -151,7 +160,8 @@ class Opsh:
             raise SyntaxError(f"bad arithmetic: {expr}") from None
 
     def capture(self, cmdline):
-        """Run cmdline in a child opsh and return what it printed (for $(...))."""
+        # Pour $(...) : un fils exécute la commande avec sa sortie branchée sur
+        # un pipe, et le père lit tout ce qui sort du pipe.
         r, w = os.pipe()
         pid = os.fork()
         if pid == 0:
@@ -167,10 +177,11 @@ class Opsh:
         os.waitpid(pid, 0)
         return data.rstrip("\n")
 
-    # --- parsing ---
+    # ---------- découpage de la ligne ----------
+
     @staticmethod
     def split_pipes(line):
-        """Split on '->' but not inside quotes."""
+        # coupe sur "->", sauf si c'est entre guillemets
         parts, cur, quote, i = [], "", None, 0
         while i < len(line):
             c = line[i]
@@ -182,12 +193,13 @@ class Opsh:
                 continue
             cur += c
             i += 1
-        parts.append(cur)
+        parts.append(cur)  # le dernier morceau
         return [p.strip() for p in parts]
 
     @staticmethod
     def parse_command(text):
-        """'say hi > f.txt' -> (['say','hi'], stdin=None, stdout='f.txt', append=False)"""
+        # "say hi > f.txt" donne (['say', 'hi'], None, 'f.txt', False, False)
+        # c'est-à-dire : argv, fichier d'entrée, fichier de sortie, >> ?, & ?
         lex = shlex.shlex(text, posix=True, punctuation_chars="<>&")
         lex.whitespace_split = True
         tokens = list(lex)
@@ -209,15 +221,18 @@ class Opsh:
             else:
                 argv.append(t)
                 i += 1
-        if argv and argv[0] in ALIASES:            # list -> ls, show -> cat ...
+        if argv and argv[0] in ALIASES:
             argv[0] = ALIASES[argv[0]]
         return argv, infile, outfile, append, bg
 
-    # --- builtins (run inside the shell process) ---
+    # ---------- les builtins ----------
+
     def builtin(self, argv):
-        """Run a builtin; return its exit status."""
+        # Ces commandes tournent dans le shell lui-même, sans fork.
+        # Pour go c'est obligatoire : un fils qui fait chdir ne change pas
+        # le dossier du père.
         cmd, args = argv[0], argv[1:]
-        if cmd == "go":                        # like cd, has to run in the shell itself
+        if cmd == "go":
             target = args[0] if args else os.path.expanduser("~")
             try:
                 os.chdir(os.path.expanduser(target))
@@ -243,14 +258,16 @@ class Opsh:
         elif cmd == "past":
             for n, h in enumerate(self.history, 1):
                 print(f"{n:>4}  {h}")
-        elif cmd == "export":                  # export NAME=value  or  export NAME
+        elif cmd == "export":
+            # export NOM=valeur, ou export NOM pour une variable déjà définie
             for a in args:
                 name, _, value = a.partition("=")
                 os.environ[name] = value if "=" in a else self.vars.get(name, "")
         elif cmd == "jobs":
             for num, (pid, c) in self.jobs.items():
                 print(f"[{num}]  {pid}  Running   {c}")
-        elif cmd == "fg":                      # simple fg: wait for the job
+        elif cmd == "fg":
+            # version simple : on attend le job comme une commande normale
             if args and not args[0].lstrip("%").isdigit():
                 print(f"fg: {args[0]}: not a job number", file=sys.stderr)
                 return 1
@@ -260,21 +277,23 @@ class Opsh:
                 return 1
             pid, c = self.jobs.pop(num)
             print(c)
-            signal.signal(signal.SIGINT, lambda s, f: os.kill(pid, s))  # pass Ctrl-C on
+            # pendant l'attente, un Ctrl-C est renvoyé au job
+            signal.signal(signal.SIGINT, lambda s, f: os.kill(pid, s))
             try:
                 return self.wait_for([pid])
             finally:
                 signal.signal(signal.SIGINT, signal.default_int_handler)
         return 0
 
-    # --- execution ---
+    # ---------- exécution ----------
+
     def run_line(self, line):
         line = line.strip()
         if not line or line.startswith("#"):
             return
         try:
             line = self.expand(line)
-            # VAR=value  (assignment, no spaces around '=')
+            # X=valeur (sans espace autour du =) : c'est une affectation
             m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", line)
             if m:
                 self.vars[m.group(1)] = shlex.split(m.group(2))[0] if m.group(2) else ""
@@ -295,12 +314,12 @@ class Opsh:
 
     def run_pipeline(self, commands, text):
         background = commands[-1][4]
-        # a lone builtin runs in the shell itself (go, quit and export need that)
+        # un builtin tout seul se lance dans le shell (go, quit, export en ont besoin)
         if len(commands) == 1 and commands[0][0][0] in BUILTINS and not background:
             return self.run_builtin_redirected(commands[0])
 
-        # While children run, the shell ignores Ctrl-C (bash does the same).
-        # The children reset SIGINT to default, so Ctrl-C only stops them.
+        # Pendant que les fils tournent, le shell ignore Ctrl-C (comme bash).
+        # Les fils remettent SIGINT par défaut, donc Ctrl-C n'arrête qu'eux.
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
             return self.fork_pipeline(commands, text, background)
@@ -308,42 +327,49 @@ class Opsh:
             signal.signal(signal.SIGINT, signal.default_int_handler)
 
     def fork_pipeline(self, commands, text, background):
+        # Un fork par commande. Entre deux commandes il y a un pipe :
+        # la sortie de l'une devient l'entrée de la suivante.
         pids, prev_read = [], None
         for idx, (argv, infile, outfile, append, _) in enumerate(commands):
             last = idx == len(commands) - 1
             if not last:
-                r, w = os.pipe()               # pipe: w = write end, r = read end
+                r, w = os.pipe()  # r = côté lecture, w = côté écriture
             pid = os.fork()
-            if pid == 0:                       # child
+            if pid == 0:
+                # on est dans le fils
                 signal.signal(signal.SIGINT, signal.SIG_DFL)
                 signal.signal(signal.SIGCHLD, signal.SIG_DFL)
                 if background:
-                    os.setpgid(0, 0)           # own group: Ctrl-C won't kill it
-                if prev_read is not None:      # read from previous command
-                    os.dup2(prev_read, 0)
+                    os.setpgid(0, 0)  # son propre groupe, Ctrl-C ne le touche pas
+                if prev_read is not None:
+                    os.dup2(prev_read, 0)  # lit la sortie de la commande d'avant
                     os.close(prev_read)
-                if not last:                   # write into the pipe
+                if not last:
                     os.close(r)
-                    os.dup2(w, 1)
+                    os.dup2(w, 1)  # écrit dans le pipe au lieu de l'écran
                     os.close(w)
                 try:
                     self.apply_redirections(infile, outfile, append)
-                    if argv[0] in BUILTINS:    # builtin inside a pipeline
+                    if argv[0] in BUILTINS:  # ex : say hi -> wc -c
                         status = self.builtin(argv)
                         sys.stdout.flush()
                         os._exit(status)
-                    os.execvp(argv[0], argv)   # replaces the child's program
-                except FileNotFoundError as e:     # the program, or a file after < >
+                    os.execvp(argv[0], argv)  # le fils devient le programme
+                except FileNotFoundError as e:
+                    # soit le programme n'existe pas, soit le fichier après < >
                     print(f"opsh: {e.filename + ': no such file' if e.filename else 'command not found: ' + argv[0]}", file=sys.stderr)
                     os._exit(127)
-                except OSError as e:               # no permission, is a directory...
+                except OSError as e:
+                    # pas le droit, c'est un dossier, etc.
                     print(f"opsh: {e.filename or argv[0]}: {e.strerror}", file=sys.stderr)
                     os._exit(126)
-            # parent
+            # on est dans le père
             pids.append(pid)
             if prev_read is not None:
-                os.close(prev_read)            # the parent has to close its copy too
+                os.close(prev_read)
             if not last:
+                # Important : le père ferme son côté écriture. Sinon la commande
+                # suivante ne voit jamais la fin du pipe et le shell reste bloqué.
                 os.close(w)
                 prev_read = r
 
@@ -357,15 +383,16 @@ class Opsh:
         return self.wait_for(pids)
 
     def wait_for(self, pids):
-        """Wait for all foreground children and return the status of the last one."""
+        # attend tous les fils et renvoie le code du dernier (c'est lui qui donne $?)
         status = 0
         for pid in pids:
             try:
-                _, st = os.waitpid(pid, 0)     # sleeps until this child ends
+                _, st = os.waitpid(pid, 0)
             except ChildProcessError:
                 continue
             status = os.waitstatus_to_exitcode(st)
-            if status < 0:                     # killed by signal N -> 128+N like bash
+            if status < 0:
+                # tué par le signal N : on renvoie 128 + N comme bash (Ctrl-C donne 130)
                 print()
                 status = 128 - status
         return status
@@ -374,16 +401,17 @@ class Opsh:
     def apply_redirections(infile, outfile, append):
         if infile:
             fd = os.open(infile, os.O_RDONLY)
-            os.dup2(fd, 0)                     # fd 0 = stdin
+            os.dup2(fd, 0)  # le fichier remplace le clavier (fd 0)
             os.close(fd)
         if outfile:
             flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append else os.O_TRUNC)
             fd = os.open(outfile, flags, 0o644)
-            os.dup2(fd, 1)                     # fd 1 = stdout
+            os.dup2(fd, 1)  # le fichier remplace l'écran (fd 1)
             os.close(fd)
 
     def run_builtin_redirected(self, cmd):
-        """Builtin in the parent with > or <: save fds, redirect, restore."""
+        # Un builtin avec > ou < tourne dans le shell, donc on garde une copie
+        # de l'écran et du clavier, on redirige, puis on remet tout en place.
         argv, infile, outfile, append, _ = cmd
         saved = os.dup(0), os.dup(1)
         try:
@@ -401,104 +429,105 @@ class Opsh:
             os.close(saved[1])
         return status
 
-    # --- script mode: if / for / while ---
-    def parse_block(self, lines, i, ends):
-        """Turn lines into a tree of nodes until one of `ends` is found.
+    # ---------- mode script : if / for / while ----------
 
-        Returns (nodes, i): the list of nodes and the index of the line that ended
-        the block. The nodes are tuples:
-            ("cmd", line)
-            ("if", condition, then_nodes, else_nodes)
-            ("for", var, "word list", body_nodes)
-            ("while", condition, body_nodes)
-        It calls itself for the inside of a block (recursion), so loops can be nested.
-        """
+    def parse_block(self, lines, i, ends):
+        # Transforme les lignes en arbre jusqu'à tomber sur un des mots de `ends`.
+        # Renvoie (noeuds, i). Les noeuds ressemblent à :
+        #   ("cmd", ligne)
+        #   ("if", condition, partie_then, partie_else)
+        #   ("for", var, "liste de mots", corps)
+        #   ("while", condition, corps)
+        # La fonction s'appelle elle-même pour l'intérieur d'un bloc,
+        # c'est ce qui permet d'avoir des boucles dans des boucles.
         nodes = []
         while i < len(lines):
             line = lines[i].strip()
             word = line.split()[0] if line else ""
-            if word in ends:                       # end of the block we are reading
+            if word in ends:
                 return nodes, i
-            if word == "if":                       # if CMD / then / else / fi
+            if word == "if":
                 cond = line[2:].strip()
-                then_part, i = self.parse_block(lines, i + 2, ("else", "fi"))   # i+2: skip "then"
+                then_part, i = self.parse_block(lines, i + 2, ("else", "fi"))  # i+2 : on saute "then"
                 else_part = []
                 if lines[i].strip() == "else":
                     else_part, i = self.parse_block(lines, i + 1, ("fi",))
                 nodes.append(("if", cond, then_part, else_part))
-            elif word == "for":                    # for x in a b c / do / done
+            elif word == "for":
                 parts = line.split()
-                body, i = self.parse_block(lines, i + 2, ("done",))            # i+2: skip "do"
+                body, i = self.parse_block(lines, i + 2, ("done",))  # i+2 : on saute "do"
                 nodes.append(("for", parts[1], " ".join(parts[3:]), body))
-            elif word == "while":                  # while CMD / do / done
+            elif word == "while":
                 body, i = self.parse_block(lines, i + 2, ("done",))
                 nodes.append(("while", line[5:].strip(), body))
-            elif line and not line.startswith("#"):  # an ordinary command
+            elif line and not line.startswith("#"):
                 nodes.append(("cmd", line))
-            i += 1                                 # skip fi / done (or go to the next line)
+            i += 1  # on passe le fi / done, ou on va juste à la ligne suivante
         return nodes, i
 
     def run_nodes(self, nodes):
-        # walk the tree made by parse_block and run it
         for node in nodes:
             kind = node[0]
             if kind == "cmd":
                 self.run_line(node[1])
-            elif kind == "if":                     # run the condition, look at $?
+            elif kind == "if":
+                # on lance la condition et on regarde $?
                 self.run_line(node[1])
                 self.run_nodes(node[2] if self.last_status == 0 else node[3])
-            elif kind == "for":                    # one turn per word of the list
+            elif kind == "for":
                 for value in shlex.split(self.expand(node[2])):
                     self.vars[node[1]] = value
                     self.run_nodes(node[3])
-            elif kind == "while":                  # repeat while the condition gives 0
+            elif kind == "while":
                 while True:
                     self.run_line(node[1])
                     if self.last_status != 0:
                         break
                     self.run_nodes(node[2])
-            if self.last_status == 130:            # Ctrl-C killed a command (128 + SIGINT 2):
-                raise KeyboardInterrupt            # stop the whole script, like bash
+            if self.last_status == 130:
+                # Ctrl-C a tué une commande (128 + 2) : on arrête tout le script
+                raise KeyboardInterrupt
 
     def run_script(self, path):
-        # script mode: python3 opsh.py file.opsh
         try:
             with open(path) as f:
                 text = f.read()
-        except OSError as e:                       # no such file, permission denied, directory...
+        except OSError as e:
             print(f"opsh: {path}: {e.strerror}", file=sys.stderr)
             return 127
-        # allow "if cmd; then ...; fi" and "for x in a b; do ...; done" on one line
+        # pour accepter aussi "for x in a b; do say $x; done" sur une seule ligne
         text = re.sub(r";\s*(then|do|else|fi|done)\b", r"\n\1\n", text)
-        lines = [l for l in text.splitlines()         # drop empty and comment lines
+        lines = [l for l in text.splitlines()
                  if l.strip() and not l.strip().startswith("#")]
         try:
             nodes, _ = self.parse_block(lines, 0, ())
-        except IndexError:                         # parse_block ran past the end: no fi / done
+        except IndexError:
+            # parse_block est sorti du fichier : il manque un fi ou un done
             print(f"opsh: {path}: 'fi' or 'done' is missing", file=sys.stderr)
             return 2
         try:
             self.run_nodes(nodes)
-        except KeyboardInterrupt:                  # Ctrl-C stops the script
+        except KeyboardInterrupt:
             return 130
         return self.last_status
 
-    # --- history, completion, .opshrc, repl ---
+    # ---------- historique, TAB, .opshrc et la boucle principale ----------
+
     def setup_readline(self):
-        # readline gives the arrow keys, the history (up/down) and the TAB key
-        if not readline:                       # module missing on this system: skip
+        if not readline:
             return
-        try:                                   # load the history of the previous sessions
+        try:
+            # on recharge l'historique des sessions d'avant
             readline.read_history_file(HISTORY_FILE)
             self.history = [readline.get_history_item(i)
                             for i in range(1, readline.get_current_history_length() + 1)]
-        except OSError:                        # first run: no ~/.opsh_history yet
-            pass
-        words = BUILTINS + list(ALIASES)       # the opsh words TAB can propose
+        except OSError:
+            pass  # premier lancement, pas encore de ~/.opsh_history
+        words = BUILTINS + list(ALIASES)
 
         def complete(text, state):
-            # readline calls this with state = 0, 1, 2 ... until we return None
-            # first word -> commands, otherwise -> file names
+            # readline nous appelle avec state = 0, 1, 2... jusqu'à ce qu'on renvoie None.
+            # Premier mot -> on propose nos commandes, sinon -> des noms de fichiers.
             if readline.get_line_buffer().split()[:1] in ([], [text]):
                 options = [w for w in words if w.startswith(text)]
             else:
@@ -506,28 +535,28 @@ class Opsh:
                 try:
                     options = [os.path.join(d, f) + ("/" if os.path.isdir(os.path.join(d or ".", f)) else "")
                                for f in os.listdir(d or ".") if f.startswith(base)]
-                except OSError:                # folder does not exist / not readable
+                except OSError:
                     options = []
             return options[state] if state < len(options) else None
         readline.set_completer(complete)
-        readline.set_completer_delims(" \t")   # a word ends at a space or a tab only
-        # macOS uses libedit, Linux uses GNU readline: the TAB binding is written differently
+        readline.set_completer_delims(" \t")
+        # macOS a libedit au lieu de GNU readline, et TAB ne s'active pas pareil
         readline.parse_and_bind("bind ^I rl_complete" if "libedit" in (readline.__doc__ or "") else "tab: complete")
 
     def save_history(self):
-        # write the history to ~/.opsh_history so the next opsh remembers it
         if readline:
             try:
                 readline.write_history_file(HISTORY_FILE)
-            except OSError:                    # read-only home, etc.: not worth a crash
-                pass
+            except OSError:
+                pass  # home en lecture seule par exemple, pas grave
 
     def load_rc(self):
-        # ~/.opshrc = "run commands" file, executed once at start-up (like ~/.bashrc)
-        if os.path.exists(RC_FILE):            # no file -> nothing to do, no error
+        # ~/.opshrc est lu une fois au démarrage, comme ~/.bashrc
+        # chaque ligne passe par run_line, exactement comme si on l'avait tapée
+        if os.path.exists(RC_FILE):
             with open(RC_FILE) as f:
-                for line in f:                 # every line goes through the normal path
-                    self.run_line(line)        # same function as a line typed at the prompt
+                for line in f:
+                    self.run_line(line)
 
     def repl(self):
         self.setup_readline()
@@ -535,11 +564,11 @@ class Opsh:
         while True:
             try:
                 line = input("opsh> ")
-            except KeyboardInterrupt:          # Ctrl-C at the prompt: new line
-                print()
+            except KeyboardInterrupt:
+                print()  # Ctrl-C à l'invite : on passe juste à la ligne
                 continue
-            except EOFError:                   # Ctrl-D: leave like 'quit'
-                print()
+            except EOFError:
+                print()  # Ctrl-D : on sort, comme quit
                 break
             if line.strip():
                 self.history.append(line)
@@ -549,7 +578,7 @@ class Opsh:
 
 def main():
     shell = Opsh()
-    if len(sys.argv) > 1:                       # script mode
+    if len(sys.argv) > 1:
         sys.exit(shell.run_script(sys.argv[1]))
     shell.repl()
 

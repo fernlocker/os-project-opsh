@@ -1,4 +1,4 @@
-# ~/.opshrc - executed by opsh at startup (copy it: cp .opshrc.example ~/.opshrc)
+# ~/.opshrc - lu par opsh à chaque démarrage (pour l'utiliser : cp .opshrc.example ~/.opshrc)
 export EDITOR=nano
 GREETING="Welcome to opsh"
 say $GREETING - type info for help

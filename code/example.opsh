@@ -1,4 +1,4 @@
-# example.opsh - run with: python3 opsh.py example.opsh
+# example.opsh - petit script de démo, à lancer avec : python3 opsh.py example.opsh
 osinfo
 i=1
 while [ $i -le 3 ]
